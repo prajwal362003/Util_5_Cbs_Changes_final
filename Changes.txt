@@ -1,0 +1,53 @@
+BATCH WISE CBS DUMP + MANIFEST - WHAT TO DO BESIDES THE 3 JAVA FILES
+=====================================================================
+(every change inside the Java files is marked  CHANGE (CBS-3) )
+
+1) NEW CLASSES (put in package com.sbi.zip.dto)
+   CbsBatch.java, CbsLotEntry.java
+
+2) DATABASE (needs DBA approval)
+   ALTER TABLE kycupdate.kyc_cbs_perfios_records
+     ADD (BATCH_NO NUMBER(10), BATCH_STATUS VARCHAR2(10), LOT_ZIP_NAME VARCHAR2(100));
+   - Old rows (UAT trials of the per-day version) have empty BATCH_STATUS and are ignored.
+     Delete them anyway so the table is clean.
+   - cbs_dump_date now holds date + time of when the lot was added to the batch.
+
+3) INTERFACES (files I do not have) - add these lines
+   PerfiosService.java  AND  PerfiosDetailsDAO.java  (same 6 methods in both):
+     // CHANGE (CBS-3)
+     com.sbi.zip.dto.CbsBatch findOpenCbsBatch();
+     int nextCbsBatchNo(String ddMMyy);
+     int cbsRecordsDoneForLot(String lotZipName);
+     void insertCbsBatchRecord(java.sql.Timestamp at, String lotNo, String batchFile, String lcpc, int count, int batchNo, String lotZipName);
+     void closeCbsBatch(String batchFile);
+     java.util.List<com.sbi.zip.dto.CbsLotEntry> cbsBatchLots(String batchFile);
+   (markZipFailed / updateZipFailed / streamCbsDump from the earlier changes must already be there)
+
+4) PROPERTIES (same file as Zip.Output) - exact folder names as on the server
+   Cbs.Data=/REKYC/UTIL_5_ZIP_CREATION/CBS_DATA
+   Cbs.Manifest=/REKYC/UTIL_5_ZIP_CREATION/MANIFEST_FILE
+   The jar's OS user must be able to WRITE in both folders. Sub folder CBS_DATA/OPEN is created by the jar.
+
+5) MAIN CLASS (file I do not have) - add at the very start of main, and the close option
+   public static void main(String[] args) {
+       // CHANGE (CBS-3): batch size is mandatory:  java -jar Util5.jar 200000
+       try {
+           ZipCreationController.parseBatchSize(args);
+       } catch (IllegalArgumentException e) {
+           System.out.println(e.getMessage());
+           System.exit(1);
+       }
+       ... existing start up ...
+       // where the controller object is available:
+       if (ZipCreationController.isCloseRequested(args)) {      // java -jar Util5.jar 200000 close
+           controller.closeOpenBatchNow();                      // throws IOException
+       } else {
+           ... existing call that processes the lots ...
+       }
+   }
+
+6) CHECK BEFORE GOING LIVE
+   - The dump query must run for the jar's DB user (ORA-28094 data redaction was still open).
+   - Delimiter is "," (CBS_DELIMITER) and commas inside values become a space (CBS_REPLACE_COMMAS = true). Change both in the controller if the client says otherwise.
+   - Manifest Date & Time format is dd-MM-yyyy h:mm a - confirm against the bank's sample.
+   - Whatever sends files to SFG must ignore *.tmp and the OPEN folder.
