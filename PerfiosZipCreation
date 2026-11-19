@@ -1,0 +1,44 @@
+package main;
+
+import java.io.IOException;
+
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+
+import com.sbi.zip.controller.ZipCreationController;
+
+public class PerfiosZipCreation {
+
+	// CHANGE (CBS-3): usage
+	//   java -jar Util5.jar 200000          -> normal run, a CBS batch holds 200000 records
+	//   java -jar Util5.jar 200000 close    -> closes the open CBS batch by hand (no lots are processed)
+	public static void main(String[] args) throws IOException {
+
+		// ===== CHANGE (CBS-3): batch size is mandatory - stop with a message if it is missing or wrong =====
+		int batchSize;
+		try {
+			batchSize = ZipCreationController.parseBatchSize(args);
+		} catch (IllegalArgumentException e) {
+			System.out.println(e.getMessage());
+			System.exit(1);
+			return;
+		}
+		System.out.println("CBS batch size : " + batchSize + " records");
+		// ===== END CHANGE (CBS-3) =====
+
+		AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(AppConfiguration.class);
+		
+		ZipCreationController mainController = context.getBean(ZipCreationController.class);
+
+		// ===== CHANGE (CBS-3): optional second argument "close" = close the open batch and stop =====
+		if (ZipCreationController.isCloseRequested(args)) {
+			mainController.closeOpenBatchNow();
+			System.out.println("CBS open batch close finished");
+			return;
+		}
+		// ===== END CHANGE (CBS-3) =====
+		
+		mainController.processLcpc();
+		System.out.println("Kyc update File seperation utility ends ");
+
+	}
+}
